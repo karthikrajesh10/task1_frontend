@@ -7,7 +7,7 @@ from tts_stt_backend.backend.chat_service import process_chat
 from tts_stt_backend.backend.stt_service import speech_to_text
 
 
-# ---------------- Page Config ----------------
+#  Page Config 
 st.set_page_config(
     page_title="Voice Assistant Chatbot",
     page_icon="🗣️",
@@ -20,14 +20,14 @@ st.caption("STT & TTS with Multilanguage Support")
 OUTPUT_DIR = "output/audio"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-# ---------------- Session State ----------------
+#  Session State 
 if "chats" not in st.session_state:
     st.session_state.chats = {1: []}
 
 if "current_chat_id" not in st.session_state:
     st.session_state.current_chat_id = 1
 
-# ---------------- Sidebar ----------------
+# Sidebar 
 with st.sidebar:
     st.header("💬 Chats")
 
@@ -46,7 +46,7 @@ with st.sidebar:
 
     st.divider()
 
-    # -------- Language Selection --------
+    #  Language 
     st.header("🌍 Speech Language")
 
     language_option = st.selectbox(
@@ -77,11 +77,11 @@ with st.sidebar:
         with open(audio_path, "wb") as f:
             f.write(audio.get_wav_data())
 
-        # Engine-independent STT call with language
+       
         st.session_state.voice_input = speech_to_text(audio_path, selected_language)
         st.success("Voice converted to text")
 
-# ---------------- Display Chat ----------------
+# Display Chat 
 messages = st.session_state.chats[st.session_state.current_chat_id]
 
 for msg in messages:
@@ -96,10 +96,10 @@ for msg in messages:
             st.audio(msg["audio"])
         st.caption(msg["time"])
 
-# ---------------- Input ----------------
+#  User Input 
 user_input = st.chat_input("Type your message...")
 
-# If voice input exists, treat it as user input
+
 if "voice_input" in st.session_state:
     user_input = st.session_state.voice_input
     del st.session_state.voice_input

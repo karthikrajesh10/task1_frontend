@@ -1,123 +1,135 @@
 import streamlit as st
-import os
-import speech_recognition as sr
-from datetime import datetime
+import requests
+from st_audiorec import st_audiorec
 
-from tts_stt_backend.backend.chat_service import process_chat
-from tts_stt_backend.backend.stt_service import speech_to_text
+API_BASE = "http://127.0.0.1:8000"
+
+st.set_page_config(page_title="Voice Assistant", layout="centered")
+st.title("🗣️ Voice Assistant")
+
+# ---------------- SESSION STATE ----------------
+
+if "token" not in st.session_state:
+    st.session_state.token = None
+
+if "page" not in st.session_state:
+    st.session_state.page = "login"
+
+# ---------------- AUTH ----------------
+
+def signup():
+    st.subheader("Signup")
+    u = st.text_input("Username")
+    p = st.text_input("Password", type="password")
+
+    if st.button("Create account"):
+        r = requests.post(
+            f"{API_BASE}/auth/signup",
+            json={"username": u, "password": p}
+        )
+        if r.status_code == 200:
+            st.success("Signup successful. Please login.")
+            st.session_state.page = "login"
+            st.rerun()
+        else:
+            st.error(r.text)
 
 
-#  Page Config 
-st.set_page_config(
-    page_title="Voice Assistant Chatbot",
-    page_icon="🗣️",
-    layout="centered"
-)
+def login():
+    st.subheader("Login")
+    u = st.text_input("Username")
+    p = st.text_input("Password", type="password")
 
-st.title("🗣️ Voice Assistant Chatbot")
-st.caption("STT & TTS with Multilanguage Support")
+    if st.button("Login"):
+        r = requests.post(
+            f"{API_BASE}/auth/login",
+            json={"username": u, "password": p}
+        )
+        if r.status_code == 200:
+            st.session_state.token = r.json()["access_token"]
+            st.session_state.page = "chat"
+            st.rerun()
+        else:
+            st.error("Invalid credentials")
 
-OUTPUT_DIR = "output/audio"
-os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-#  Session State 
-if "chats" not in st.session_state:
-    st.session_state.chats = {1: []}
-
-if "current_chat_id" not in st.session_state:
-    st.session_state.current_chat_id = 1
-
-# Sidebar 
-with st.sidebar:
-    st.header("💬 Chats")
-
-    if st.button("➕ New Chat"):
-        new_id = max(st.session_state.chats.keys()) + 1
-        st.session_state.chats[new_id] = []
-        st.session_state.current_chat_id = new_id
+if st.session_state.page == "signup":
+    signup()
+    if st.button("Already have an account? Login"):
+        st.session_state.page = "login"
         st.rerun()
 
-    st.divider()
+elif st.session_state.page == "login":
+    login()
+    if st.button("New user? Signup"):
+        st.session_state.page = "signup"
+        st.rerun()
 
-    for cid in st.session_state.chats:
-        if st.button(f"Chat {cid}", key=f"chat_{cid}"):
-            st.session_state.current_chat_id = cid
+# ---------------- CHAT ----------------
+
+elif st.session_state.page == "chat":
+
+    with st.sidebar:
+        st.markdown("### Settings")
+
+        language = st.selectbox(
+            "Voice language",
+            ["en", "ml", "hi", "ta"],
+            index=0
+        )
+
+        if st.button("🚪 Logout"):
+            st.session_state.clear()
             st.rerun()
 
-    st.divider()
+    st.markdown("---")
 
-    #  Language 
-    st.header("🌍 Speech Language")
+    # -------- TEXT INPUT --------
+    st.subheader("💬 Text input")
 
-    language_option = st.selectbox(
-        "Select language",
-        ["Auto Detect", "English", "Hindi", "Tamil", "Malayalam", "Telugu"]
-    )
+    text = st.text_input("Type a message")
 
-    LANGUAGE_MAP = {
-        "English": "en",
-        "Hindi": "hi",
-        "Tamil": "ta",
-        "Malayalam": "ml",
-        "Telugu": "te"
-    }
+    if st.button("Send text") and text.strip():
+        r = requests.post(
+            f"{API_BASE}/chat",
+            headers={"Authorization": f"Bearer {st.session_state.token}"},
+            data={"text": text, "language": language}
+        )
 
-    selected_language = None if language_option == "Auto Detect" else LANGUAGE_MAP[language_option]
-
-    st.divider()
-    st.header("🎤 Voice Input")
-
-    if st.button("🎙️ Start Voice Input"):
-        r = sr.Recognizer()
-        with sr.Microphone() as source:
-            st.info("Listening...")
-            audio = r.listen(source)
-
-        audio_path = os.path.join(OUTPUT_DIR, "voice_input.wav")
-        with open(audio_path, "wb") as f:
-            f.write(audio.get_wav_data())
-
-       
-        st.session_state.voice_input = speech_to_text(audio_path, selected_language)
-        st.success("Voice converted to text")
-
-# Display Chat 
-messages = st.session_state.chats[st.session_state.current_chat_id]
-
-for msg in messages:
-    with st.chat_message(msg["role"]):
-        if "original_text" in msg:
-            st.markdown(f"**🗣️ You said (Original):** {msg['original_text']}")
-            st.markdown(f"**🌍 English Translation:** {msg['content']}")
+        if r.status_code == 200:
+            res = r.json()
+            st.markdown(f"**English:** {res['english_text']}")
+            st.audio(API_BASE + res["audio"])
         else:
-            st.write(msg["content"])
+            st.error(r.text)
 
-        if "audio" in msg:
-            st.audio(msg["audio"])
-        st.caption(msg["time"])
+    st.markdown("---")
 
-#  User Input 
-user_input = st.chat_input("Type your message...")
+    # -------- VOICE INPUT --------
+    st.subheader("🎙️ Voice input")
 
+    wav_audio_data = st_audiorec()
 
-if "voice_input" in st.session_state:
-    user_input = st.session_state.voice_input
-    del st.session_state.voice_input
+    if wav_audio_data is not None:
+        st.success("Voice recorded")
 
-if user_input:
-    time_now = datetime.now().strftime("%H:%M")
+        files = {
+            "audio": ("voice.wav", wav_audio_data, "audio/wav")
+        }
 
-    messages.append({
-        "role": "user",
-        "content": user_input,
-        "time": time_now
-    })
+        data = {"language": language}
 
-    assistant_msg = process_chat(
-        user_input,
-        st.session_state.current_chat_id,
-        len(messages)
-    )
+        r = requests.post(
+            f"{API_BASE}/chat",
+            headers={"Authorization": f"Bearer {st.session_state.token}"},
+            files=files,
+            data=data
+        )
 
-    messages.append(assistant_msg)
-    st.rerun()
+        if r.status_code == 200:
+            res = r.json()
+            st.markdown(f"**Original:** {res.get('original_text')}")
+            st.markdown(f"**English:** {res['english_text']}")
+            st.audio(API_BASE + res["audio"])
+        else:
+            st.error(r.text)
